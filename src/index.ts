@@ -1,3 +1,4 @@
+import { WebSocket, WebSocketServer } from "ws";
 import AsciiArt from "ascii-art";
 import { app, BrowserWindow, ipcMain, ipcRenderer, nativeImage, protocol, session } from "electron";
 import { appendFileSync, existsSync, mkdirSync, readFile, readFileSync, writeFileSync } from "fs";
@@ -16,9 +17,26 @@ export default class YTMusic {
     public configsManager: ConfigsManager;
     public discordRPC: Client;
 
+    public websocketServer: WebSocketServer;
+
+    public songName: string;
+    public artist: string;
+    public album: string;
+    public length: number;
+    public currentTime: number;
+    public paused: boolean;
+    public liked: boolean;
+    public disliked: boolean;
+    public repeated: boolean;
+
+    public clients: Array<WebSocket> = new Array<WebSocket>()
+
     private loggedIn: boolean;
 
     constructor() {
+        this.websocketServer = new WebSocketServer({
+            port: 9469
+        });
         this.discordRPC = new Client({transport: "ipc",})
         this.discordRPC.login({clientId: "891343258842697728"})
         register("891343258842697728")
@@ -63,7 +81,40 @@ export default class YTMusic {
             this.mainWindow.webContents.executeJavaScript(`
             const {ipcRenderer} = require('electron')
             setInterval(() => {
-                ipcRenderer.send("interval")
+                ipcRenderer.send("interval");
+                try {
+                    
+                    let muted = document.getElementsByClassName("volume style-scope ytmusic-player-bar")[0].ariaPressed == "true"; // Get if it's muted
+                    let paused = document.getElementById("play-pause-button").title == "Pause"; // Get if it's paused
+
+                    let songName = document.getElementsByClassName("title style-scope ytmusic-player-bar")[0].getRawText(); // Song Name
+                    let artist = ""; // Artist
+                    let album = ""; // Album
+                    let i = 0;
+                    for (let ele of document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string")) {
+                        i++;
+                        if (i == document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string").length) {
+                            album = ele.text;
+                            continue
+                        } else {
+                            artist += ele.text;
+                            if (i != document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string").length - 1) {
+                                artist += " & ";
+                            }
+                        }
+                        
+                    }
+                    let length = document.getElementsByTagName("tp-yt-paper-progress")[2].ariaValueMax; // Length
+                    let currentTime = document.getElementsByTagName("tp-yt-paper-progress")[2].value; // Current Time
+                    let repeated = document.getElementsByClassName("repeat style-scope ytmusic-player-bar")[0].title; // Repeat one, Repeat off, Repeat all
+                    let liked = document.getElementById("like-button-renderer").getElementsByClassName("like style-scope ytmusic-like-button-renderer")[0].ariaPressed == "true" // Get if it's liked
+                    let disliked = document.getElementById("like-button-renderer").getElementsByClassName("dislike style-scope ytmusic-like-button-renderer")[0].ariaPressed == "true" // Get if it's disliked
+                    ipcRenderer.send("update", true, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked)
+                } catch (e) {
+                    console.log(e)
+                    ipcRenderer.send("update", false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined)
+                }
+
             })
             `)
         })
@@ -122,15 +173,92 @@ export default class YTMusic {
             
         })
         ipcMain.addListener("update-rpc", (args, songName, artist, album, length) => {
-            this.discordRPC.setActivity({
-                largeImageKey: "icon",
-                largeImageText: "YouTube Music",
-                details: songName,
-                state: artist
-            }).catch((reason) => {
-                console.log(reason)
-            })
+
         })
+        console.log("Initializing WebSocket API Server...")
+        
+        ipcMain.addListener("update", (args, playing, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked) => {
+            if (!playing) return;
+            if (this.songName != songName || this.artist != artist) {
+                this.discordRPC.setActivity({
+                    largeImageKey: "icon",
+                    largeImageText: "YouTube Music",
+                    details: songName,
+                    state: artist
+                }).catch((reason) => {
+                    console.log(reason)
+                })
+            } 
+
+            if (this.songName != songName || this.artist != artist || this.album != album || this.length != parseInt(length)
+                || this.currentTime != parseInt(currentTime) || this.paused != (paused=="true") || this.liked != (liked == "true")
+                || this.disliked != (disliked == "true") || this.repeated != repeated.replace("Repeat ", "")) {
+                    for (let c of this.clients) {
+                        c.send(JSON.stringify({
+                            "type": "UPDATE",
+                            playing,
+                            muted,
+                            paused, 
+                            songName,
+                            artist,
+                            album,
+                            length,
+                            currentTime,
+                            "repeated": repeated.replace("Repeat ", ""),
+                            liked,
+                            disliked
+                        }))
+                    }
+                }
+            this.songName = songName;
+            this.artist = artist;
+            this.album = album;
+            this.length = parseInt(length);
+            this.currentTime = parseInt(currentTime);
+            this.paused = paused == "true";
+            this.liked = liked == "true";
+            this.disliked = disliked == "true";
+            this.repeated = repeated.replace("Repeat ", "");
+
+            
+            
+        })
+
+        this.websocketServer.on("connection", ((ws, req) => {
+            this.clients.push(ws);
+            console.log("[WebSocket API Server] Connection from: " + req.socket.remoteAddress);
+            ws.addEventListener("message", (event) => {
+                try {
+                    if (event.data == "TOGGLE_PAUSE") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementById("play-pause-button").click()`);
+                    } else if (event.data == "SHUFFLE") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("shuffle style-scope ytmusic-player-bar")[0].click()`);
+                    } else if (event.data == "PREVIOUS") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("previous-button style-scope ytmusic-player-bar")[0].click()`);
+                    } else if (event.data == "NEXT") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("next-button style-scope ytmusic-player-bar")[0].click()`);
+                    } else if (event.data == "MUTE") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("volume style-scope ytmusic-player-bar")[0].click()`);
+                    } else if (event.data == "REPEAT") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("repeat style-scope ytmusic-player-bar")[0].click()`);
+                    } else if (event.data == "LIKE") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementById("like-button-renderer").getElementsByClassName("like style-scope ytmusic-like-button-renderer")[0].click()`);
+                    } else if (event.data == "DISLIKE") {
+                        this.mainWindow.webContents.executeJavaScript(`document.getElementById("like-button-renderer").getElementsByClassName("dislike style-scope ytmusic-like-button-renderer")[0].click()`);
+                    }
+                } catch (e) {
+                    console.log(e)
+                }
+                
+            })
+            ws.addEventListener("close", (event) => {
+                console.log("[WebSocket API Server] Disconnected from: " + req.socket.remoteAddress);
+                this.clients.splice(this.clients.indexOf(event.target))
+            })
+        }))
+
+        console.log("WebSocket Server is up! Ready to connect!")
+        
     }
 
     public getConfig(): YTCConfig {
