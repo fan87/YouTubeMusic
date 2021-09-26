@@ -4,7 +4,9 @@
   "description": "Unofficial Youtube Music Desktop Client",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "compile": "python3 compiler.py",
+    "start": "electron ."
   },
   "repository": {
     "type": "git",
@@ -15,5 +17,20 @@
   "bugs": {
     "url": "https://github.com/fan87/YouTubeMusic/issues"
   },
-  "homepage": "https://github.com/fan87/YouTubeMusic#readme"
+  "homepage": "https://github.com/fan87/YouTubeMusic#readme",
+  "dependencies": {
+    "@cliqz/adblocker-electron": "^1.22.7",
+    "@types/node": "^16.10.0",
+    "ascii-art": "^2.8.5",
+    "cross-fetch": "^3.1.4",
+    "discord-rpc": "^4.0.1",
+    "electron": "^15.0.0",
+    "fetch": "^1.1.0",
+    "ts-node": "^10.2.1",
+    "typescript": "^4.4.3",
+    "ws": "^8.2.2"
+  },
+  "devDependencies": {
+    "@types/discord-rpc": "^4.0.0"
+  }
 }

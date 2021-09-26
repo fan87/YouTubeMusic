@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+        "rootDir": ".",
+        "noImplicitAny": false,
+        "skipLibCheck": true,
+        "outDir": ".out"
+    },
+    "buildOptions": {
+        "verbose": true
+    }
+}
