@@ -1,5 +1,4 @@
 import { WebSocket, WebSocketServer } from "ws";
-import AsciiArt from "ascii-art";
 import { app, BrowserWindow, ipcMain, ipcRenderer, nativeImage, protocol, session } from "electron";
 import { appendFileSync, existsSync, mkdirSync, readFile, readFileSync, writeFileSync } from "fs";
 import ConfigsManager from "./data/ConfigsManager";
@@ -7,6 +6,10 @@ import YTCConfig from "./data/YTCConfig";
 import { ElectronBlocker } from '@cliqz/adblocker-electron';
 import fetch from 'cross-fetch'; // required 'fetch'
 import {Client, register} from "discord-rpc"
+import { exit } from "process";
+import { json } from "stream/consumers";
+import { homedir } from "os";
+import { exec } from "child_process";
 
 
 
@@ -28,6 +31,10 @@ export default class YTMusic {
     public liked: boolean;
     public disliked: boolean;
     public repeated: boolean;
+    public playing: boolean;
+    public muted: boolean;
+    public isVideo: boolean;
+    public videoId: string;
 
     public clients: Array<WebSocket> = new Array<WebSocket>()
 
@@ -64,6 +71,9 @@ export default class YTMusic {
                 contextIsolation: false
             }
         });
+        this.mainWindow.addListener("close", () => {
+            exit(0);
+        })
         this.mainWindow.maximize();
         console.log(" - Redirecting to YouTube Music...")
         let lastUrl: string = this.getConfig().LAST_URL;
@@ -86,33 +96,24 @@ export default class YTMusic {
                     
                     let muted = document.getElementsByClassName("volume style-scope ytmusic-player-bar")[0].ariaPressed == "true"; // Get if it's muted
                     let paused = document.getElementById("play-pause-button").title == "Pause"; // Get if it's paused
+                    let isVideo = document.getElementById("thumbnail").getElementsByClassName("style-scope yt-img-shadow")[0].src.startsWith("data");
 
                     let songName = document.getElementsByClassName("title style-scope ytmusic-player-bar")[0].getRawText(); // Song Name
                     let artist = ""; // Artist
                     let album = ""; // Album
                     let i = 0;
-                    for (let ele of document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string")) {
-                        i++;
-                        if (i == document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string").length) {
-                            album = ele.text;
-                            continue
-                        } else {
-                            artist += ele.text;
-                            if (i != document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string").length - 1) {
-                                artist += " & ";
-                            }
-                        }
-                        
-                    }
+                    artist = document.getElementsByClassName("byline style-scope ytmusic-player-bar complex-string")[0].title.split(" • ")[0];
+                    album = document.getElementsByClassName("byline style-scope ytmusic-player-bar complex-string")[0].title.split(" • ")[1];
+
                     let length = document.getElementsByTagName("tp-yt-paper-progress")[2].ariaValueMax; // Length
                     let currentTime = document.getElementsByTagName("tp-yt-paper-progress")[2].value; // Current Time
                     let repeated = document.getElementsByClassName("repeat style-scope ytmusic-player-bar")[0].title; // Repeat one, Repeat off, Repeat all
                     let liked = document.getElementById("like-button-renderer").getElementsByClassName("like style-scope ytmusic-like-button-renderer")[0].ariaPressed == "true" // Get if it's liked
                     let disliked = document.getElementById("like-button-renderer").getElementsByClassName("dislike style-scope ytmusic-like-button-renderer")[0].ariaPressed == "true" // Get if it's disliked
-                    ipcRenderer.send("update", true, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked)
+                    ipcRenderer.send("update", true, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked, isVideo)
                 } catch (e) {
                     console.log(e)
-                    ipcRenderer.send("update", false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined)
+                    ipcRenderer.send("update", false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined)
                 }
 
             })
@@ -152,19 +153,9 @@ export default class YTMusic {
 
 
         session.defaultSession.webRequest.onCompleted(filter, (details) => {
-            if (!this.loggedIn) {
-                this.discordRPC.login({clientId: "891343258842697728"}).then(() => {
-                    this.loggedIn = true;
-                    this.mainWindow.webContents.executeJavaScript(`
-                        setTimeout(() => {
-                            ipcRenderer.send("update-rpc", document.getElementsByClassName("title style-scope ytmusic-player-bar")[0].getRawText(), document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string")[0].text, document.getElementsByClassName("yt-simple-endpoint style-scope yt-formatted-string")[1].text, document.getElementsByTagName("tp-yt-paper-progress")[2].ariaValueMax)
-                        }, 1000)
-                    `).catch((reason) => {
-
-                    })
-                })
-            }
-
+            
+            this.videoId = JSON.parse(String((details as any).uploadData[0].bytes))["videoId"];
+            exec(`youtube-dl --geo-bypass -x --audio-quality 0 --add-metadata --xattrs --embed-thumbnail -o ${homedir()}/YouTubeMusic  https://www.youtube.com/watch?v=${this.videoId}`)
             
             if (!this.mainWindow.webContents.getURL().startsWith("https://music.youtube.com/watch?v=") || this.mainWindow.webContents.getURL() == this.getConfig().LAST_URL) return;
             
@@ -177,9 +168,42 @@ export default class YTMusic {
         })
         console.log("Initializing WebSocket API Server...")
         
-        ipcMain.addListener("update", (args, playing, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked) => {
-            if (!playing) return;
+        ipcMain.addListener("update", (args, playing, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked, isVideo) => {
+            if (!playing)  {
+                if (this.playing != playing) {
+                    for (let c of this.clients) {
+                        c.send(JSON.stringify({
+                            "type": "UPDATE",
+                            playing,
+                            "muted": false,
+                            "paused": true, 
+                            "songName": "Not Playing",
+                            "artist": "Not Playing",
+                            "album": "Not Playing",
+                            "length": 0,
+                            "currentTime": 0,
+                            "repeated": repeated.replace("Repeat ", ""),
+                            liked,
+                            disliked,
+                            "isVideo": false
+                        }))
+                    }
+                }
+                this.playing = playing;
+                return;
+            }
             if (this.songName != songName || this.artist != artist) {
+                let artistBuffer = "";
+                artistBuffer = artist;
+                if (artistBuffer.length > 100) {
+                    artistBuffer = artistBuffer.substring(0, 100) + "...";
+                }
+                console.log(artistBuffer)
+                let nameBuffer = "";
+                nameBuffer = songName;
+                if (nameBuffer.length > 100) {
+                    nameBuffer = nameBuffer.substring(0, 100) + "...";
+                }
                 this.discordRPC.setActivity({
                     largeImageKey: "icon",
                     largeImageText: "YouTube Music",
@@ -188,11 +212,11 @@ export default class YTMusic {
                 }).catch((reason) => {
                     console.log(reason)
                 })
-            } 
+            }
 
             if (this.songName != songName || this.artist != artist || this.album != album || this.length != parseInt(length)
-                || this.currentTime != parseInt(currentTime) || this.paused != (paused=="true") || this.liked != (liked == "true")
-                || this.disliked != (disliked == "true") || this.repeated != repeated.replace("Repeat ", "")) {
+                || this.currentTime != parseInt(currentTime) || this.paused != paused || this.liked != liked
+                || this.disliked != disliked || this.repeated != repeated.replace("Repeat ", "") || this.muted != muted || this.isVideo != isVideo) {
                     for (let c of this.clients) {
                         c.send(JSON.stringify({
                             "type": "UPDATE",
@@ -202,23 +226,26 @@ export default class YTMusic {
                             songName,
                             artist,
                             album,
-                            length,
-                            currentTime,
+                            length: parseInt(length),
+                            currentTime: parseInt(currentTime),
                             "repeated": repeated.replace("Repeat ", ""),
                             liked,
-                            disliked
+                            disliked,
+                            isVideo
                         }))
                     }
-                }
+            }
             this.songName = songName;
             this.artist = artist;
             this.album = album;
             this.length = parseInt(length);
+            this.muted = muted;
             this.currentTime = parseInt(currentTime);
-            this.paused = paused == "true";
-            this.liked = liked == "true";
-            this.disliked = disliked == "true";
+            this.paused = paused;
+            this.liked = liked;
+            this.disliked = disliked;
             this.repeated = repeated.replace("Repeat ", "");
+            this.isVideo = isVideo;
 
             
             
@@ -226,6 +253,21 @@ export default class YTMusic {
 
         this.websocketServer.on("connection", ((ws, req) => {
             this.clients.push(ws);
+            ws.send(JSON.stringify({
+                "type": "UPDATE",
+                "playing": this.playing,
+                "muted": this.muted,
+                "paused": this.paused, 
+                "songName": this.songName,
+                "artist": this.artist,
+                "album": this.album,
+                "length": this.length,
+                "currentTime": this.currentTime,
+                "repeated": this.repeated,
+                "liked": this.liked,
+                "disliked": this.disliked,
+                "isVideo": this.isVideo
+            }))
             console.log("[WebSocket API Server] Connection from: " + req.socket.remoteAddress);
             ws.addEventListener("message", (event) => {
                 try {
