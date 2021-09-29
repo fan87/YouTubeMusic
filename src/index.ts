@@ -101,6 +101,9 @@ export default class YTMusic {
                     let songName = document.getElementsByClassName("title style-scope ytmusic-player-bar")[0].getRawText(); // Song Name
                     let artist = ""; // Artist
                     let album = ""; // Album
+                    let videoId = undefined;
+                    videoId = document.getElementsByClassName("ytp-title-link yt-uix-sessionlink")[0].href.split("v=")[1].split("&")[0];
+                    
                     let i = 0;
                     artist = document.getElementsByClassName("byline style-scope ytmusic-player-bar complex-string")[0].title.split(" • ")[0];
                     album = document.getElementsByClassName("byline style-scope ytmusic-player-bar complex-string")[0].title.split(" • ")[1];
@@ -110,10 +113,10 @@ export default class YTMusic {
                     let repeated = document.getElementsByClassName("repeat style-scope ytmusic-player-bar")[0].title; // Repeat one, Repeat off, Repeat all
                     let liked = document.getElementById("like-button-renderer").getElementsByClassName("like style-scope ytmusic-like-button-renderer")[0].ariaPressed == "true" // Get if it's liked
                     let disliked = document.getElementById("like-button-renderer").getElementsByClassName("dislike style-scope ytmusic-like-button-renderer")[0].ariaPressed == "true" // Get if it's disliked
-                    ipcRenderer.send("update", true, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked, isVideo)
+                    ipcRenderer.send("update", true, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked, isVideo, videoId)
                 } catch (e) {
                     console.log(e)
-                    ipcRenderer.send("update", false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined)
+                    ipcRenderer.send("update", false, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined)
                 }
 
             })
@@ -153,10 +156,7 @@ export default class YTMusic {
 
 
         session.defaultSession.webRequest.onCompleted(filter, (details) => {
-            
-            this.videoId = JSON.parse(String((details as any).uploadData[0].bytes))["videoId"];
-            exec(`youtube-dl --geo-bypass -x --audio-quality 0 --add-metadata --xattrs --embed-thumbnail -o ${homedir()}/YouTubeMusic  https://www.youtube.com/watch?v=${this.videoId}`)
-            
+
             if (!this.mainWindow.webContents.getURL().startsWith("https://music.youtube.com/watch?v=") || this.mainWindow.webContents.getURL() == this.getConfig().LAST_URL) return;
             
             this.getConfig().LAST_URL = this.mainWindow.webContents.getURL();
@@ -168,7 +168,7 @@ export default class YTMusic {
         })
         console.log("Initializing WebSocket API Server...")
         
-        ipcMain.addListener("update", (args, playing, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked, isVideo) => {
+        ipcMain.addListener("update", (args, playing, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked, isVideo, videoId) => {
             if (!playing)  {
                 if (this.playing != playing) {
                     for (let c of this.clients) {
@@ -185,12 +185,22 @@ export default class YTMusic {
                             "repeated": repeated.replace("Repeat ", ""),
                             liked,
                             disliked,
-                            "isVideo": false
+                            "isVideo": false,
+                            "videoId": videoId
                         }))
                     }
                 }
                 this.playing = playing;
                 return;
+            }
+            if(!isVideo && this.videoId != videoId) {
+                console.log(`Downloading ${songName} by ${artist}  (https://youtube.com/watch?v=${videoId})`)
+                exec(`mkdir -p "${homedir()}/YouTubeMusic/${artist}"`)
+                console.log(`youtube-dl --audio-format mp3 --rm-cache-dir --geo-bypass -x --audio-quality 0 --no-overwrites --add-metadata --xattrs --embed-thumbnail -o "${homedir()}/YouTubeMusic/%(title).%(ext)s" https://www.youtube.com/watch?v=${videoId}`)
+                exec(`youtube-dl --audio-format mp3 --rm-cache-dir --geo-bypass -x --audio-quality 0 --no-overwrites --add-metadata --xattrs --embed-thumbnail -o "${homedir()}/YouTubeMusic/${artist}/${songName}.%(ext)s" https://www.youtube.com/watch?v=${videoId}`, (error, stdout, stderr) => {
+                    console.log("YouTube DL finished download of " + songName)
+                    console.log(stderr)
+                })
             }
             if (this.songName != songName || this.artist != artist) {
                 let artistBuffer = "";
@@ -198,12 +208,13 @@ export default class YTMusic {
                 if (artistBuffer.length > 100) {
                     artistBuffer = artistBuffer.substring(0, 100) + "...";
                 }
-                console.log(artistBuffer)
                 let nameBuffer = "";
                 nameBuffer = songName;
                 if (nameBuffer.length > 100) {
                     nameBuffer = nameBuffer.substring(0, 100) + "...";
                 }
+                
+
                 this.discordRPC.setActivity({
                     largeImageKey: "icon",
                     largeImageText: "YouTube Music",
@@ -231,7 +242,8 @@ export default class YTMusic {
                             "repeated": repeated.replace("Repeat ", ""),
                             liked,
                             disliked,
-                            isVideo
+                            isVideo,
+                            videoId
                         }))
                     }
             }
@@ -246,6 +258,7 @@ export default class YTMusic {
             this.disliked = disliked;
             this.repeated = repeated.replace("Repeat ", "");
             this.isVideo = isVideo;
+            this.videoId = videoId;
 
             
             
