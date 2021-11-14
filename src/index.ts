@@ -195,9 +195,9 @@ export default class YTMusic {
             }
             if(!isVideo && this.videoId != videoId) {
                 console.log(`Downloading ${songName} by ${artist}  (https://youtube.com/watch?v=${videoId})`)
-                exec(`mkdir -p "${homedir()}/YouTubeMusic/${artist}"`)
-                console.log(`youtube-dl --audio-format mp3 --rm-cache-dir --geo-bypass -x --audio-quality 0 --no-overwrites --add-metadata --xattrs --embed-thumbnail -o "${homedir()}/YouTubeMusic/%(title).%(ext)s" https://www.youtube.com/watch?v=${videoId}`)
-                exec(`youtube-dl --audio-format mp3 --rm-cache-dir --geo-bypass -x --audio-quality 0 --no-overwrites --add-metadata --xattrs --embed-thumbnail -o "${homedir()}/YouTubeMusic/${artist}/${songName}.%(ext)s" https://www.youtube.com/watch?v=${videoId}`, (error, stdout, stderr) => {
+                exec(`mkdir -p "${homedir()}/YouTubeMusic/${artist.split(" & ")[0].split(", ")[0]}"`)
+                console.log(`youtube-dl --audio-format mp3 --rm-cache-dir --geo-bypass -x --audio-quality 0 --no-overwrites --add-metadata --xattrs --embed-thumbnail -o "${homedir()}/YouTubeMusic/${artist.split(" & ")[0].split(", ")[0]}/${songName}.%(ext)s" https://www.youtube.com/watch?v=${videoId}`)
+                exec(`youtube-dl --audio-format mp3 --rm-cache-dir --geo-bypass -x --audio-quality 0 --no-overwrites --add-metadata --xattrs --embed-thumbnail -o "${homedir()}/YouTubeMusic/${artist.split(" & ")[0].split(", ")[0]}/${songName}.%(ext)s" https://www.youtube.com/watch?v=${videoId}`, (error, stdout, stderr) => {
                     console.log("YouTube DL finished download of " + songName)
                     console.log(stderr)
                 })
