@@ -42,5 +42,11 @@
     "entrypoints": {
       "daemon": "index.js"
     }
+  },
+  "build": {
+    "appId": "me.fan87.youtubemusic",
+    "appImage": {
+      "icon": "resources/512x512.png"
+    }
   }
 }
