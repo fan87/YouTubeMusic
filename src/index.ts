@@ -6,16 +6,21 @@ import YTCConfig from "./data/YTCConfig";
 import { ElectronBlocker } from '@cliqz/adblocker-electron';
 import fetch from 'cross-fetch'; // required 'fetch'
 import {Client, register} from "discord-rpc"
-import { exit } from "process";
+import { exit, title } from "process";
 import { json } from "stream/consumers";
 import { homedir } from "os";
 import { exec } from "child_process";
+var Player = require("mpris-service")
+var JSBI = require("jsbi")
+
 
 
 
 export default class YTMusic {
+
     public static INSTANCE: YTMusic;
 
+    public player: any;
     public mainWindow: BrowserWindow;
     public configsManager: ConfigsManager;
     public discordRPC: Client;
@@ -40,12 +45,25 @@ export default class YTMusic {
 
     private loggedIn: boolean;
 
+
     constructor() {
         this.websocketServer = new WebSocketServer({
             port: 9469
         });
         this.discordRPC = new Client({transport: "ipc",})
         this.discordRPC.login({clientId: "891343258842697728"})
+
+        this.player = Player({
+            name: 'youtubemusic',
+            identity: 'YouTube Music',
+            supportedUriSchemes: ['https'],
+            supportedMimeTypes: ['audio/mpeg', 'application/ogg'],
+            supportedInterfaces: ['player']
+        });
+
+
+        
+
         register("891343258842697728")
 
         
@@ -68,7 +86,8 @@ export default class YTMusic {
                 devTools: true,
                 backgroundThrottling: false,
                 nodeIntegration: true,
-                contextIsolation: false
+                contextIsolation: false,
+                
             }
         });
         this.mainWindow.addListener("close", () => {
@@ -193,7 +212,31 @@ export default class YTMusic {
                 this.playing = playing;
                 return;
             }
-            if(!isVideo && this.videoId != videoId) {
+            this.player.metadata = {
+                'mpris:trackid': this.player.objectPath('track/0'),
+                'mpris:length': length * 1000 * 1000, // In microseconds
+                'mpris:artUrl': 'https://i3.ytimg.com/vi/' + videoId + '/maxresdefault.jpg',
+                'xesam:title': songName,
+                'xesam:album': album,
+                'xesam:artist': artist
+            };
+            if (!paused) {
+                this.player.playbackStatus = 'Paused';
+            } else {
+                this.player.playbackStatus = 'Playing';
+            }
+            this.player.canSeek = false
+            if (repeated.replace("Repeat ", "") == "one") {
+                this.player.loopStatus = "Track"
+            }
+            if (repeated.replace("Repeat ", "") == "off") {
+                this.player.loopStatus = "None"
+            }
+            if (repeated.replace("Repeat ", "") == "all") {
+                this.player.loopStatus = "Playlist"
+            }
+
+            if(!isVideo && this.videoId != videoId && this.getConfig().DOWNLOAD) {
                 console.log(`Downloading ${songName} by ${artist}  (https://youtube.com/watch?v=${videoId})`)
                 exec(`mkdir -p "${homedir()}/YouTubeMusic/${artist.split(" & ")[0].split(", ")[0]}"`)
                 console.log(`youtube-dl --audio-format mp3 --rm-cache-dir --geo-bypass -x --audio-quality 0 --no-overwrites --add-metadata --xattrs --embed-thumbnail -o "${homedir()}/YouTubeMusic/${artist.split(" & ")[0].split(", ")[0]}/${songName}.%(ext)s" https://www.youtube.com/watch?v=${videoId}`)
@@ -219,10 +262,24 @@ export default class YTMusic {
                     largeImageKey: "icon",
                     largeImageText: "YouTube Music",
                     details: songName,
-                    state: artist
+                    state: artist,
+                    buttons: [{
+                        label: "Listen on YouTube Music",
+                        url: this.mainWindow.webContents.getURL()
+                    }],
                 }).catch((reason) => {
                     console.log(reason)
-                })
+                });
+                console.log( JSON.stringify({ 
+                    largeImageKey: "icon",
+                    largeImageText: "YouTube Music",
+                    details: songName,
+                    state: artist,
+                    buttons: [{
+                        label: "Listen on YouTube Music",
+                        url: this.mainWindow.webContents.getURL()
+                    }]}));
+
             }
 
             if (this.songName != songName || this.artist != artist || this.album != album || this.length != parseInt(length)
@@ -263,7 +320,36 @@ export default class YTMusic {
             
             
         })
-
+        var events = ['raise', 'quit', 'next', 'previous', 'pause', 'playpause', 'stop', 'play', 'seek', 'position', 'open', 'volume', 'loopStatus', 'shuffle'];
+        let that = this;
+        that.player.on("play", function () {
+            if (!that.paused) {
+                that.mainWindow.webContents.executeJavaScript(`document.getElementById("play-pause-button").click()`);
+            }
+        });
+        that.player.getPosition = function() {
+            return that.currentTime * 1000 * 1000;
+        }
+        that.player.on("pause", function () {
+            if (that.paused) {
+                that.mainWindow.webContents.executeJavaScript(`document.getElementById("play-pause-button").click()`);
+            }
+        });
+        that.player.on("shuffle", function () {
+            that.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("shuffle style-scope ytmusic-player-bar")[0].click()`);
+        });
+        that.player.on("loopStatus", function () {
+            that.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("repeat style-scope ytmusic-player-bar")[0].click()`);
+        })
+        that.player.on("playpause", function () {
+            that.mainWindow.webContents.executeJavaScript(`document.getElementById("play-pause-button").click()`);
+        });
+        that.player.on("next", function () {
+            that.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("next-button style-scope ytmusic-player-bar")[0].click()`);
+        });
+        that.player.on("previous", function () {
+            that.mainWindow.webContents.executeJavaScript(`document.getElementsByClassName("previous-button style-scope ytmusic-player-bar")[0].click()`);
+        });
         this.websocketServer.on("connection", ((ws, req) => {
             this.clients.push(ws);
             ws.send(JSON.stringify({
