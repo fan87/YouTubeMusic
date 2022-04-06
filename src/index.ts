@@ -277,7 +277,7 @@ export default class YTMusic {
                     state: artist,
                     buttons: [{
                         label: "Listen on YouTube Music",
-                        url: "https://music.youtube.com/watch?v=" + this.videoId
+                        url: "https://music.youtube.com/watch?v=" + videoId
                     }]}));
 
             }
