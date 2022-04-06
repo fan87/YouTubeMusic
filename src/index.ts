@@ -265,7 +265,7 @@ export default class YTMusic {
                     state: artist,
                     buttons: [{
                         label: "Listen on YouTube Music",
-                        url: this.mainWindow.webContents.getURL()
+                        url: "https://music.youtube.com/watch?v=" + videoId
                     }],
                 }).catch((reason) => {
                     console.log(reason)
@@ -277,7 +277,7 @@ export default class YTMusic {
                     state: artist,
                     buttons: [{
                         label: "Listen on YouTube Music",
-                        url: this.mainWindow.webContents.getURL()
+                        url: "https://music.youtube.com/watch?v=" + this.videoId
                     }]}));
 
             }
