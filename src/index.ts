@@ -192,8 +192,7 @@ export default class YTMusic {
 
             if (!this.mainWindow.webContents.getURL().startsWith("https://music.youtube.com/watch?v=") || this.mainWindow.webContents.getURL() == this.getConfig().LAST_URL) return;
             
-            this.getConfig().LAST_URL = this.mainWindow.webContents.getURL();
-            this.configsManager.saveConfig();
+
             
         })
         ipcMain.addListener("update-rpc", (args, songName, artist, album, length) => {
@@ -202,6 +201,8 @@ export default class YTMusic {
         console.log("Initializing WebSocket API Server...")
         
         ipcMain.addListener("update", (args, playing, muted, paused, songName, artist, album, length, currentTime, repeated, liked, disliked, isVideo, videoId) => {
+            this.getConfig().LAST_URL = this.mainWindow.webContents.getURL();
+            this.configsManager.saveConfig();
             if (!playing)  {
                 if (this.playing != playing) {
                     for (let c of this.clients) {
