@@ -1,5 +1,5 @@
 import { WebSocket, WebSocketServer } from "ws";
-import { app, BrowserWindow, ipcMain, ipcRenderer, nativeImage, protocol, session } from "electron";
+import { globalShortcut, app, BrowserWindow, ipcMain, ipcRenderer, nativeImage, protocol, session } from "electron";
 import { appendFileSync, existsSync, mkdirSync, readFile, readFileSync, writeFileSync } from "fs";
 import ConfigsManager from "./data/ConfigsManager";
 import YTCConfig from "./data/YTCConfig";
@@ -10,6 +10,7 @@ import { exit, title } from "process";
 import { json } from "stream/consumers";
 import { homedir } from "os";
 import { exec } from "child_process";
+import path = require("path");
 var Player = require("mpris-service")
 var JSBI = require("jsbi")
 
@@ -87,8 +88,8 @@ export default class YTMusic {
                 backgroundThrottling: false,
                 nodeIntegration: true,
                 contextIsolation: false,
-                
-            }
+            },
+            transparent: true
         });
         this.mainWindow.addListener("close", () => {
             exit(0);
@@ -106,7 +107,20 @@ export default class YTMusic {
         ipcMain.addListener("interval", () => {
 
         })
+        this.mainWindow.webContents.on('dom-ready', () => {
+
+        });
+        var reload = ()=>{
+            this.mainWindow.reload()
+        }
+        
+        globalShortcut.register('F5', reload);
+        globalShortcut.register('CommandOrControl+R', reload);
+        
         this.mainWindow.webContents.on("did-finish-load", (event: Event, url: string) => {
+            if (this.mainWindow.webContents.getURL().startsWith("https://music.youtube.com")) {
+                this.mainWindow.webContents.insertCSS(readFileSync("src/style.css").toString());
+            }
             this.mainWindow.webContents.executeJavaScript(`
             const {ipcRenderer} = require('electron')
             setInterval(() => {

@@ -1,0 +1,7 @@
+#player-bar-background {
+    --ytmusic-player-bar-background: rgb(18, 18, 18, 0.61) !important;
+}
+
+body {
+    background-color: rgb(18, 18, 18, 0.61) !important;
+}
